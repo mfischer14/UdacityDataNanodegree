@@ -4,7 +4,7 @@ import xml.etree.cElementTree as ET
 from collections import defaultdict
 import re
 import pprint
-import pandas as pd
+import pandas
 import sqlite3
 import csv
 import codecs as cdc
@@ -12,8 +12,8 @@ import cerberus
 import schema
 
 ##################### FILES THAT ARE USED #######################################
-SOURCE_OSM = "new-york_new-york.osm"
-#SOURCE_OSM = "sample.osm"
+#SOURCE_OSM = "new-york_new-york.osm"
+SOURCE_OSM = "sample.osm"
 DESTINATION_DB = SOURCE_OSM.replace(".osm", ".db")
 osm_file = open(SOURCE_OSM, "r")
 NODES_PATH = "nodes.csv"
@@ -194,10 +194,10 @@ def shape_element(element, node_attr_fields=NODE_FIELDS, way_attr_fields=WAY_FIE
         tags = getTags(element, NODE_TAGS_FIELDS)
         return {'node': node_attribs, 'node_tags':tags}
     elif element.tag == 'way':
-        way_attribs - getATtribs(element, WAY_FIELDS)
+        way_attribs = getAttribs(element, WAY_FIELDS)
         tags = getTags(element, WAY_TAGS_FIELDS)
         way_nodes = getNodes(element, WAY_NODES_FIELDS)
-        return {'way': way_attribs, 'way_ndoes': way_nodes, 'way_tags': tags}
+        return {'way': way_attribs, 'way_nodes': way_nodes, 'way_tags': tags}
 
 ######################## HELPER FUNCTIONS #######################################
 def get_element(osm_file, tags=('node','way','relation')):
@@ -210,10 +210,10 @@ def get_element(osm_file, tags=('node','way','relation')):
             root.clear()
 
 def validate_element(element, validator, schema=SCHEMA):
-    ''' Raise ValidationError if element does not match schema'''
+    """Raise ValidationError if element does not match schema"""
     if validator.validate(element, schema) is not True:
         field, errors = next(validator.errors.iteritems())
-        message_string = "\nElement of type '{}' has the following errors:\n{1}"
+        message_string = "\nElement of type '{0}' has the following errors:\n{1}"
         error_string = pprint.pformat(errors)
 
         raise Exception(message_string.format(field, error_string))
@@ -235,9 +235,10 @@ def createSQLDB():
     db = sqlite3.connect(DESTINATION_DB)
     c = db.cursor()
 
-    QUERY = '''CREATE TABLE [nodes]
+    QUERY = []
+    QUERY.append('''CREATE TABLE [nodes]
     (
-        [id] INTEGER PRIMARY KEY NOT NULL
+        [id] INTEGER PRIMARY KEY NOT NULL,
         [lat] REAL,
         [lon] REAL,
         [user] TEXT,
@@ -245,64 +246,84 @@ def createSQLDB():
         [version] INTEGER,
         [changeset] INTEGER,
         [timestamp] TEXT
-    );
+    );''')
 
-    CREATE TABLE [nodes_tags] (
+    QUERY.append('''CREATE TABLE [nodes_tags] (
         [id] INTEGER,
-        [key] TEXT
+        [key] TEXT,
         [value] TEXT,
         [type] TEXT,
         FOREIGN KEY ([id]) REFERENCES nodes([id])
-    );
+    );''')
 
-    CREATE TABLE [ways] (
+    QUERY.append('''CREATE TABLE [ways] (
         [id] INTEGER PRIMARY KEY NOT NULL,
         [user] TEXT,
         [uid] INTEGER,
         [version] TEXT,
         [changeset] INTEGER,
-        [timestampe] TEXT
-    );
+        [timestamp] TEXT
+    );''')
 
-    CREATE TABLE [ways_tags] (
+    QUERY.append('''CREATE TABLE [ways_tags] (
         [id] INTEGER NOT NULL,
         [key] TEXT NOT NULL,
         [value] TEXT NOT NULL,
         [type] TEXT,
         FOREIGN KEY ([id]) REFERENCES [ways]([id])
-    );
+    );''')
 
-    CREATE TABLE [ways_nodes] (
+    QUERY.append('''CREATE TABLE [ways_nodes] (
         [id] INTEGER NOT NULL,
         [node_id] INTEGER NOT NULL,
         [position] INTEGER NOT NULL,
         FOREIGN KEY ([id]) REFERENCES [ways]([id]),
         FOREIGN KEY ([node_id]) REFERENCES [nodes]([id])
     );
-    '''
-
-    c.execute(QUERY)
+    ''')
+    for indivQUERY in QUERY:
+        c.execute(indivQUERY)
     ### rows = c.fetchall()
     ### import pandas as pd
     ### df = pd.DataFrame(rows)
     ### print df
     db.close
 
-def importCSVToSQLDB(csvfile, tablename):
+def importCSVToSQLDB():
     db = sqlite3.connect(DESTINATION_DB)
-    df = pandas.read_csv(csvfile)
-    df.to_sql(tablename, db, if_exists='append', index=False)
+    db.text_factory = str
+
+    pandas.read_csv(NODES_PATH).to_sql('nodes', db, if_exists='append', index=False)
+    pandas.read_csv(NODE_TAGS_PATH).to_sql('nodes_tags', db, if_exists='append', index=False)
+    pandas.read_csv(WAYS_PATH).to_sql('ways', db, if_exists='append', index=False)
+    pandas.read_csv(WAY_TAGS_PATH).to_sql('ways_tags', db, if_exists='append', index=False)
+    pandas.read_csv(WAY_NODES_PATH).to_sql('ways_nodes', db, if_exists='append', index=False)
+
     db.close
 
+def runSQLQueries():
+    db = sqlite3.connect(DESTINATION_DB)
+    c = db.cursor()
+
+    QUERY = ''' SELECT nodes_tags.type, COUNT(*)
+    FROM nodes JOIN nodes_tags
+    ON nodes.id = nodes_tags.id
+    GROUP BY nodes_tags.key
+    '''
+
+    c.execute(QUERY)
+    allrows = c.fetchall()
+    pprint.pprint(allrows)
+    db.close
 ################ MAIN FUNCTION ###################################################
 def process_map(file_in, validate):
     import codecs
     ''' Iteratively Process each XML element and write to CSV'''
-    nodes_file = cdc.open(NODES_PATH, 'w')
-    node_tags_file = cdc.open(NODE_TAGS_PATH, 'w')
-    ways_file = cdc.open(WAYS_PATH, 'w')
-    way_nodes_file = cdc.open(WAY_NODES_PATH, 'w')
-    way_tags_file = cdc.open(WAY_TAGS_PATH, 'w')
+    nodes_file = cdc.open(NODES_PATH, 'wb')
+    node_tags_file = cdc.open(NODE_TAGS_PATH, 'wb')
+    ways_file = cdc.open(WAYS_PATH, 'wb')
+    way_nodes_file = cdc.open(WAY_NODES_PATH, 'wb')
+    way_tags_file = cdc.open(WAY_TAGS_PATH, 'wb')
 
     nodes_writer = UnicodeDictWriter(nodes_file, NODE_FIELDS)
     node_tags_writer = UnicodeDictWriter(node_tags_file, NODE_TAGS_FIELDS)
@@ -332,7 +353,7 @@ def process_map(file_in, validate):
                 way_tags_writer.writerows(el['way_tags'])
 
     nodes_file.close()
-    nodes_tags_file.close()
+    node_tags_file.close()
     ways_file.close()
     way_nodes_file.close()
     way_tags_file.close()
@@ -362,7 +383,13 @@ def test():
     pprint.pprint(tags)
     audit()
 
+def importCSVtoSQL():
+    createSQLDB()
+    importCSVToSQLDB()
+
 if __name__ == '__main__':
     #test()
     #audit()
-    process_map(SOURCE_OSM, validate=True)
+    #process_map(SOURCE_OSM, validate=True)
+    #importCSVtoSQL()
+    runSQLQueries()
