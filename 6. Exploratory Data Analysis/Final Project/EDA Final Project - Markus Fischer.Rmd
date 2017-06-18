@@ -1,0 +1,42 @@
+---
+title: "EDA Final Project: Red Wine Quality"
+author: "Markus Fischer"
+date: "January 2, 2017"
+output: html_document
+---
+
+
+
+```{r Data_Load, echo=FALSE, message=FALSE, warning=FALSE}
+wines <- read.csv('wineQualityReds.csv')
+```
+
+## Initial Exploration
+
+```{r Dataset_Descr1, echo=FALSE, message=FALSE, warning=FALSE}
+names(wines)
+```
+The structure of the data is as follows below. Quality of the wine is an integer from 0 to 10. In the process, we will make the quality variable as a factor (to help with plotting later on)
+```{r Dataset_Descr2, echo=FALSE, message=FALSE, warning=FALSE}
+wines$quality <- as.factor(wines$quality)
+str(wines)
+```
+Let's summarize the numerical data:
+```{r Dataset_Descr3, echo=FALSE, message=FALSE, warning=FALSE}
+summary(wines)
+```
+
+
+
+[COMMENTS]
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+qplot(x = quality, data = wines, fill = I('darkred')) + 
+  ggtitle('Quality of Red Wines')
+```
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+```
+
+
